@@ -1,0 +1,81 @@
+name: CI/CD Workflow
+
+on:
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+    branches:
+      - master
+jobs:
+  install_kind on the runner_Machine:
+    name: install kind requirements.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install packages 
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+          apt-transport-https \
+          ca-certificates \
+          curl \
+          gnupg-agent \
+          software-properties-common
+
+      - name: add docker GPG key
+        run: |
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add - 
+
+      - name: Add docker_Repo
+        run: |
+          sudo add-apt-repository \
+          "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+          $(lsb_release -cs) \
+          stable" 
+      - name: Install docker_engine
+        run: | 
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io 
+  
+      - name: Add user to permission to run group
+        run: sudo usermod -aG docker $USER 
+
+      - name: Download kubectl
+        run: sudo curl -L "https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl 
+
+      - name: Add run permissionb to the file
+        run: sudo chmod +x /usr/local/bin/kubectl 
+        
+      - name: Download Kind
+        run: sudo curl -L "https://kind.sigs.k8s.io/dl/v0.20.0/kind-$(uname)-amd64" -o /usr/local/bin/kind
+      
+      - name: Add run permissionb to the file
+        run: sudo chmod +x /usr/local/bin/kind 
+              
+  setup_k8s_and_registry:
+    name: Setup Kubernetes Cluster and Private Registry
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up docker private local registry and upload the docker to registry.
+      run: |
+          docker tag nginx localhost:5000/nginx
+          docker push localhost:5000/nginx
+    - name: Create Kubernetes Cluster
+      run: |
+        kind create cluster --config=kind.config.yaml
+        
+  pull the image and deploy it to k8s:
+    name: pull and deploy to k8s
+    runs-on: ubuntu-latest
+    needs: setup_k8s_and_registry
+
+    steps:
+    - name: pull the docker image
+      run: |
+        docker pull localhost:5000/nginx
+        kubectl apply -f nginx-deployment.yml
+
